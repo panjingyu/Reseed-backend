@@ -1,19 +1,19 @@
 import json
-from app import mysql, redis
+
+import app
 
 
-def search_torrent(dir_tree, sites):
+def search_torrent(dir_tree):
     matched_torrents = []
     for name, files in dir_tree.items():
-        matched_torrents.append(compare_torrents(name, files, sites))
+        matched_torrents.append(compare_torrents(name, files))
     return matched_torrents
 
 
-def compare_torrents(name, files, sites):
-    torrents = redis.get(name)
+def compare_torrents(name, files):
+    torrents = app.redis.get(name)
     if not torrents:
-        torrents = mysql.select_torrent(name)
-        redis.set(name, json.dumps(torrents))
+        torrents = app.mysql.select_torrent(name)
     else:
         torrents = json.loads(str(torrents, encoding='utf-8'))
 
@@ -22,9 +22,7 @@ def compare_torrents(name, files, sites):
     for t in torrents:
         success_count = failure_count = 0
         torrent_files = eval(t['files'])
-        result_site = format_sites(t['sites_existed'], sites)
-        if not result_site:
-            continue
+
         if len(torrent_files):
             if type(files) is int:
                 continue
@@ -40,25 +38,12 @@ def compare_torrents(name, files, sites):
                     failure_count += 1
             if failure_count:
                 if success_count > failure_count:
-                    mysql.hit(t['id'])
-                    cmp_warning.append({'id': t['id'], 'sites': result_site})
+                    cmp_warning.append({'id': t['id']})
             else:
-                mysql.hit(t['id'])
-                cmp_success.append({'id': t['id'], 'sites': result_site})
+                cmp_success.append({'id': t['id']})
         else:
             if type(files) is not int:
                 continue
             if t['length'] * 0.95 < files < t['length'] * 1.05:
-                mysql.hit(t['id'])
-                cmp_success.append({'id': t['id'], 'sites': result_site})
+                cmp_success.append({'id': t['id']})
     return {'name': name, 'cmp_success': cmp_success, 'cmp_warning': cmp_warning}
-
-
-def format_sites(result, sites):
-    formatted_result = list()
-    for r in result.split(','):
-        sid = r.split('-')[-1]
-        site = r.replace('-' + sid, '')
-        if site in sites and mysql.check_torrent_valid(sid, site):
-            formatted_result.append(r)
-    return ','.join(formatted_result)
